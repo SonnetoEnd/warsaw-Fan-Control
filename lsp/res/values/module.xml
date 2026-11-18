@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">warsaw Fans Control</string>
+    <string name="module_description">在系统风扇设置中选择跟随系统、原厂档位或自定义目标转速上限，并在 80% 保护停充时退出充电散热。</string>
+    <string-array name="module_scope">
+        <item>com.miui.powerkeeper</item>
+        <item>com.android.settings</item>
+    </string-array>
+</resources>
