@@ -9,8 +9,14 @@ public final class FanRulesTest {
     }
 
     private static boolean hold(int mode, String flags, String votes) throws Exception {
+        return hold(mode, flags, votes, -1, Integer.MIN_VALUE, false);
+    }
+
+    private static boolean hold(int mode, String flags, String votes, int level, int currentUa,
+                                boolean previouslyHeld) throws Exception {
         try (BufferedReader input = new BufferedReader(new StringReader(votes))) {
-            return FanRules.activeProtection(mode, FanRules.number(flags), FanRules.hasStopVote(input));
+            return FanRules.activeProtection(mode, FanRules.number(flags), FanRules.buckVote(input),
+                    level, currentUa, previouslyHeld);
         }
     }
 
@@ -25,6 +31,23 @@ public final class FanRulesTest {
         check(!hold(2, "0", capVote), "protection cleared before vote was refreshed");
         check(!hold(2, "error", capVote), "unavailable smart-charge state");
         check(!hold(2, "16", "wl_buck eff_client:soc_limit 0\n"), "wireless-only vote");
+        String onlineOff = "buck eff_client:online 0\n";
+        check(hold(2, "16", onlineOff, 79, 0, false), "cold start at 79%, 0 uA, fast charger still connected");
+        check(hold(2, "16", onlineOff, 79, 7000, true), "device trace after dropping from 80% to 79%");
+        check(hold(2, "18", onlineOff, 80, -100_000, false), "boundary, sign and additional protection flags");
+        check(!hold(2, "16", onlineOff, 79, 150_000, false), "midrange current cannot start a new hold");
+        check(hold(2, "16", onlineOff, 79, 200_000, true), "existing hold tolerates small fluctuations");
+        check(!hold(2, "16", onlineOff, 79, 200_001, true), "current climbed out of the hold range");
+        check(!hold(2, "16", onlineOff, 79, -1_400_000, true), "large magnitude must not suppress OEM cooling");
+        check(!hold(2, "16", onlineOff, 79, Integer.MIN_VALUE, true), "missing Android current is not zero");
+        check(!hold(2, "16", onlineOff, -1, 0, true), "missing capacity");
+        check(!hold(2, "16", onlineOff, 78, 0, true), "outside the 79-80 maintenance window");
+        check(!hold(2, "16", onlineOff, 81, 0, true), "outside the 79-80 maintenance window above the cap");
+        check(!hold(1, "16", onlineOff, 79, 0, true), "80% setting disabled");
+        check(!hold(2, "0", onlineOff, 79, 0, true), "driver protection cleared");
+        check(!hold(2, "16", "buck eff_client:online 1", 79, 0, true), "buck charging enabled");
+        check(!hold(2, "16", "wl_buck eff_client:online 0", 79, 0, true), "wireless vote cannot qualify");
+        check(hold(2, "16", onlineOff + capVote), "explicit SOC stop takes precedence without current data");
         for (int limit = 1; limit <= 4; limit++) {
             for (int demand = 0; demand <= 4; demand++) {
                 check(FanRules.capped(demand, limit) == Math.min(demand, limit), "stock demand and gear cap");

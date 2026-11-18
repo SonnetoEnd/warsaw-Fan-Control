@@ -56,16 +56,29 @@ final class FanRules {
         return (present < 0 ? readNumber(USB + "online") : present) == 1;
     }
 
-    static boolean hasStopVote(BufferedReader votes) throws IOException {
+    enum BuckVote { OTHER, SOC_LIMIT_OFF, ONLINE_OFF }
+
+    static BuckVote buckVote(BufferedReader votes) throws IOException {
+        BuckVote result = BuckVote.OTHER;
         String line;
         while ((line = votes.readLine()) != null) {
-            if ("buck eff_client:soc_limit 0".equals(line.trim())) return true;
+            switch (line.trim()) {
+                case "buck eff_client:soc_limit 0": return BuckVote.SOC_LIMIT_OFF;
+                case "buck eff_client:online 0": result = BuckVote.ONLINE_OFF; break;
+            }
         }
-        return false;
+        return result;
     }
 
-    static boolean activeProtection(int mode, int flags, boolean stopVote) {
-        return mode == 2 && flags >= 0 && (flags & 16) != 0 && stopVote;
+    static boolean activeProtection(int mode, int flags, BuckVote vote, int level, int currentUa,
+                                    boolean previouslyHeld) {
+        if (mode != 2 || flags < 0 || (flags & 16) == 0) return false;
+        if (vote == BuckVote.SOC_LIMIT_OFF) return true;
+        if (vote != BuckVote.ONLINE_OFF || (level != 79 && level != 80)) return false;
+        // A disabled buck can also mean that a separate charging path is in use.
+        // Check net battery current in both directions. The cast also handles the API's MIN_VALUE sentinel.
+        int maxIdleCurrentUa = previouslyHeld ? 200_000 : 100_000;
+        return Math.abs((long) currentUa) <= maxIdleCurrentUa;
     }
 
     private FanRules() {}

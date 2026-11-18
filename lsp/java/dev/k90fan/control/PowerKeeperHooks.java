@@ -4,6 +4,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -22,6 +23,7 @@ import de.robv.android.xposed.XposedHelpers;
 
 final class PowerKeeperHooks {
     private final ContentResolver resolver;
+    private final BatteryManager battery;
     private volatile Handler fan;
     private ContentObserver observer;
     private volatile int maxGear;
@@ -33,6 +35,7 @@ final class PowerKeeperHooks {
 
     PowerKeeperHooks(Context context) {
         resolver = context.getContentResolver();
+        battery = context.getSystemService(BatteryManager.class);
         maxGear = FanRules.legacy(Settings.Global.getInt(resolver, FanLimits.LEGACY_GEAR, 0));
     }
 
@@ -140,12 +143,24 @@ final class PowerKeeperHooks {
 
     private boolean limitStoppedCharge(int mode) {
         try (BufferedReader votes = new BufferedReader(new FileReader(FanRules.CHARGE_ENABLE))) {
-            if (!FanRules.hasStopVote(votes)) return false;
+            FanRules.BuckVote vote = FanRules.buckVote(votes);
+            if (vote == FanRules.BuckVote.OTHER) return false;
             // smart_chg itself is restricted to the vendor service on this ROM.
             Object miCharge = XposedHelpers.getObjectField(fan, "e");
             if (miCharge == null) return false;
             String flags = (String) XposedHelpers.callMethod(miCharge, "getMiChargePath", "smart_chg");
-            return FanRules.activeProtection(mode, FanRules.number(flags), true);
+            int level = -1;
+            int currentUa = Integer.MIN_VALUE;
+            if (vote == FanRules.BuckVote.ONLINE_OFF && battery != null) {
+                level = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+                currentUa = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+            }
+            boolean stop = FanRules.activeProtection(mode, FanRules.number(flags), vote, level, currentUa, held);
+            if (stop && !held) {
+                String detail = vote == FanRules.BuckVote.ONLINE_OFF ? ", " + level + "%, " + currentUa + " uA" : "";
+                XposedBridge.log("warsaw Fans Control: paused rapid-charge cooling (" + vote + detail + ")");
+            }
+            return stop;
         } catch (IOException | RuntimeException | XposedHelpers.InvocationTargetError e) {
             return false;
         }
@@ -170,6 +185,7 @@ final class PowerKeeperHooks {
                 && XposedHelpers.getBooleanField(fan, "I") && XposedHelpers.getBooleanField(fan, "y")
                 && XposedHelpers.getBooleanField(fan, "B") && FanRules.cablePresent();
         held = watching && limitStoppedCharge(mode);
+        if (previousHold && !held) XposedBridge.log("warsaw Fans Control: released rapid-charge cooling");
         boolean updateCap = maxGear != previousMax || (initialSync && FanRules.isGear(maxGear));
         if (held != previousHold || updateCap) {
             // C rebuilds the snapshot from live OEM state and arbitrates all scenes.

@@ -4,7 +4,7 @@ LSPosed 模块在 HyperOS 原有风扇设置页加入 80% 停充修正、风扇�
 
 ## 安装和使用
 
-1. 下载并安装 `warsaw-Fans-Control-v0.3.2.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
+1. 下载并安装 `warsaw-Fans-Control-v0.3.3.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
 2. 在 LSPosed 启用模块，确认作用域勾选「设置」`com.android.settings` 和「电量和性能」`com.miui.powerkeeper`。
 3. 重启手机，打开系统原来的风扇设置页。
 4. 保留「极速充电时启用」，在电池设置中选择 80% 充电保护。新增的「80% 停充时退出极速充电散热」默认开启。
@@ -21,9 +21,13 @@ LSPosed 模块在 HyperOS 原有风扇设置页加入 80% 停充修正、风扇�
 
 PowerKeeper 的 `FanStateHandler` 初始化时读取 `IMiCharge.getQuickChargeType()`，随后接收 `miui.intent.action.ACTION_QUICK_CHARGE_TYPE`。原厂风扇把类型编号 ≥ 3 视为极速充电。电池广播中的电量和插电类型用于记录。风扇的最终档位还取决于场景、模式与温度。
 
-有线极速充电时，模块在 PowerKeeper 自己的处理线程上检查 80% 保护模式、`smart_chg` 的保护位和驱动上报的 `buck eff_client:soc_limit 0`。确认停充后，模块在这一次风扇策略计算中将极速充电标志置为假，让原厂策略重新选择档位。解除停充时再用原厂快充状态重新计算。电池事件、快充事件和设置变更会触发检查，符合条件期间每 5 秒复查一次，以覆盖停充原因晚于电量广播更新的情况。
+有线极速充电、80% 保护和停充修正均开启时，模块检查 `smart_chg` 的保护位。保护位有效且驱动上报 `buck eff_client:soc_limit 0` 时，立即退出极速充电散热。保持插电时，驱动也可能上报 `buck eff_client:online 0`。如果电量为 79% 或 80%，模块还会读取 Android 的电池端净电流。电流绝对值不超过 100 mA 时退出充电散热，已退出时容许最多 200 mA 的波动。这两个阈值由模块设定。在这个分支中，超过 200 mA、离开 79%–80% 区间或读数不可用时，会恢复原厂判断。
 
-在适配机上，插电 100% 时读到快充类型 1、风扇 0 rpm。短暂开启 80% 保护后，`smart_chg` 从 0 变为 16，停充原因从 `term_recharge` 变为 `soc_limit`。该次实测时电量已满。
+确认停充时，模块仅在本次风扇策略计算中将极速充电标志置为假。电池事件、快充事件和设置变更会触发重新判断，有线极速充电等条件满足期间每 5 秒复查。充电控制仍由系统负责。
+
+在适配机上，插电 100% 时读到快充类型 1、风扇 0 rpm。开启 80% 保护后，`smart_chg` 从 0 变为 16，停充原因从 `term_recharge` 变为 `soc_limit`。另一次在 79% 的实测中，原厂仍报告快充类型 4 和 `Charging`，保护位为 16，驱动上报 `online 0`，电池端电流为 0–7 mA。v0.3.2 当时曾进入风扇 1 档。
+
+在相同的 79% 插电状态下，用原厂固定一档对照 v0.3.3 的修正开关。关闭修正时实测 11,055 rpm，开启修正后目标档位和实测转速均为 0。测试期间保留了同一充电器和 80% 保护设置。
 
 ## 构建
 

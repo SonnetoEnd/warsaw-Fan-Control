@@ -1,9 +1,9 @@
-warsaw Fans Control · LSPosed v0.3.2
+warsaw Fans Control · LSPosed v0.3.3
 
-直接安装 warsaw-Fans-Control-v0.3.2.apk，或解压 ZIP 后安装其中的同名 APK。在 LSPosed 中启用模块，勾选「设置」（com.android.settings）和「电量和性能」（com.miui.powerkeeper）。重启手机后打开系统原有的风扇设置页。
+直接安装 warsaw-Fans-Control-v0.3.3.apk，或解压 ZIP 后安装其中的同名 APK。在 LSPosed 中启用模块，勾选「设置」（com.android.settings）和「电量和性能」（com.miui.powerkeeper）。重启手机后打开系统原有的风扇设置页。
 
 点「风扇转速上限」选择跟随系统、原厂 1–4 档或自定义目标上限。跟随系统会恢复原厂转速表。自定义支持 12,000–19,800 rpm，每步 100 rpm，需要在 SukiSU 中给「warsaw Fans Control」（dev.k90fan.control）授予 Root。选择低于当前档位的上限会即时生效。新的安装默认跟随系统，升级保留原来选过的档位。
 
-四档目标为 12,000、14,000、16,000、19,800 rpm。实时测速会波动，可能超过目标。80% 停充修正可独立开关。
+四档目标为 12,000、14,000、16,000、19,800 rpm。实时测速会波动，可能超过目标。80% 停充修正可独立开关。保护生效后，即使插电回落到 79%，驱动仍停充且电池端电流接近零，模块也会退出极速充电散热。
 
 适配 REDMI K90 Ultra（warsaw）、HyperOS OS4.0.8.0.XHPCNXM 和 PowerKeeper 4.2.00。自定义目标兼容已验证的 Haruhi 6.6.142-android15-8-4k-Haruhi-26w37f 内核。

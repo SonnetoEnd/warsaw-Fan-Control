@@ -94,7 +94,7 @@ final class FanSettingsPage {
 
         Object fix = preference(loader, "com.android.settingslib.miuisettings.preference.SwitchPreference",
                 context, FanModule.FIX_CHARGE, "80% 停充时退出极速充电散热");
-        callMethod(fix, "setSummary", "电池保护暂停充电时生效。游戏、导航等散热需求继续由系统判断。");
+        callMethod(fix, "setSummary", "80% 保护停充或回落到 79% 仅有微小电流时，退出充电散热。游戏、导航等散热需求由系统判断。");
 
         Class<?> listener = loader.loadClass("androidx.preference.Preference$OnPreferenceChangeListener");
         Object onChange = Proxy.newProxyInstance(loader, new Class<?>[]{listener}, (proxy, method, args) -> {
