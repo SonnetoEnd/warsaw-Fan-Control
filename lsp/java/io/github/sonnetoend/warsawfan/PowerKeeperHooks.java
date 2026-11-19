@@ -25,6 +25,10 @@ final class PowerKeeperHooks {
     private final BatteryManager battery;
     private volatile Handler fan;
     private ContentObserver observer;
+    private Field chargeService;
+    private Method readChargePath;
+    private Field fastFlag;
+    private Field chargeScene;
     private ContentResolver currentUser;
     private FanPolicy policy = FanPolicy.DEFAULT;
     private String lastForeground;
@@ -43,33 +47,46 @@ final class PowerKeeperHooks {
         maxGear = FanRules.legacy(Settings.Global.getInt(resolver, FanLimits.LEGACY_GEAR, 0));
     }
 
-    void install(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> handler = loader.loadClass("q.h");
+    void install(ClassLoader loader, FanHooks hooks) throws ReflectiveOperationException {
+        Class<?> handler = loader.loadClass("q.h").asSubclass(Handler.class);
         Class<?> snapshot = loader.loadClass("q.h$h");
-        Method init = handler.getDeclaredMethod("B");
-        Method evaluate = handler.getDeclaredMethod("X", snapshot);
-        Method scene = handler.getDeclaredMethod("W", String.class, snapshot);
-        Method setGear = handler.getDeclaredMethod("A", int.class, snapshot);
+        Method init = FanHooks.method(handler, "B", void.class);
+        Method evaluate = FanHooks.method(handler, "X", void.class, snapshot);
+        Method scene = FanHooks.method(handler, "W", void.class, String.class, snapshot);
+        Method setGear = FanHooks.method(handler, "A", void.class, int.class, snapshot);
         setGear.setAccessible(true);
-        Method write = handler.getDeclaredMethod("K", String.class, String.class);
-        Method message = handler.getDeclaredMethod("handleMessage", Message.class);
+        Method write = FanHooks.method(handler, "K", boolean.class, String.class, String.class);
+        Method message = FanHooks.method(handler, "handleMessage", void.class, Message.class);
         Method publish = XposedHelpers.findMethodExact(Settings.System.class, "putIntForUser",
                 ContentResolver.class, String.class, int.class, int.class);
-        handler.getDeclaredMethod("C");
-        for (String field : new String[]{"I", "y", "B", "S", "o", "e", "f", "j", "k", "K"}) handler.getDeclaredField(field);
-        Field fast = XposedHelpers.findField(snapshot, "j");
-        Field chargeSceneEnabled = XposedHelpers.findField(snapshot, "n");
-        Field locked = XposedHelpers.findField(snapshot, "g");
-        Field range = XposedHelpers.findField(snapshot, "b");
-        Field foreground = XposedHelpers.findField(snapshot, "e");
-        Field stockMode = XposedHelpers.findField(snapshot, "a");
+        Method refreshPolicy = FanHooks.method(handler, "C", void.class);
+        FanHooks.readField(handler, "f", ContentResolver.class);
+        for (String field : new String[]{"I", "S", "K"}) FanHooks.readField(handler, field, boolean.class);
+        FanHooks.readField(handler, "o", int.class);
+        FanHooks.readField(handler, "k", int.class);
+        FanHooks.writeField(handler, "j", int.class);
+        Field locked = FanHooks.writeField(snapshot, "g", boolean.class);
+        Field range = FanHooks.writeField(snapshot, "b", int.class);
+        Field foreground = FanHooks.readField(snapshot, "e", String.class);
+        Field stockMode = FanHooks.writeField(snapshot, "a", int.class);
+        try {
+            FanHooks.readField(handler, "y", boolean.class);
+            FanHooks.readField(handler, "B", boolean.class);
+            chargeService = FanHooks.readField(handler, "e", Object.class);
+            fastFlag = FanHooks.writeField(snapshot, "j", boolean.class);
+            chargeScene = FanHooks.readField(snapshot, "n", boolean.class);
+            Method readPath = chargeService.getType().getMethod("getMiChargePath", String.class);
+            if (readPath.getReturnType() == String.class) readChargePath = readPath;
+        } catch (ReflectiveOperationException | LinkageError unavailable) {
+            // Charging telemetry is optional. The OEM fan policy can still be extended.
+        }
 
-        XposedBridge.hookMethod(init, new XC_MethodHook() {
+        hooks.hook(init, new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 attach((Handler) p.thisObject);
             }
         });
-        XposedBridge.hookMethod(message, new XC_MethodHook() {
+        hooks.hook(message, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if (((Message) p.args[0]).what == 7) {
                     policy = FanPolicy.DEFAULT;
@@ -87,7 +104,7 @@ final class PowerKeeperHooks {
                 if (what == 1 || what == 5 || what == 7 || what == 12 || what == 16 || what == 21) queueRefresh();
             }
         });
-        XposedBridge.hookMethod(evaluate, new XC_MethodHook() {
+        hooks.hook(evaluate, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) throws IllegalAccessException {
                 Object state = p.args[0];
                 boolean screenLocked = locked.getBoolean(state);
@@ -105,20 +122,20 @@ final class PowerKeeperHooks {
                     p.setObjectExtra("restoreRange", range.getInt(state));
                     range.setInt(state, 1);
                 }
-                if (held && fast.getBoolean(state) && chargeSceneEnabled.getBoolean(state)) {
+                if (held && fastFlag.getBoolean(state) && chargeScene.getBoolean(state)) {
                     p.setObjectExtra("restoreFast", Boolean.TRUE);
-                    fast.setBoolean(state, false);
+                    fastFlag.setBoolean(state, false);
                 }
             }
             @Override protected void afterHookedMethod(MethodHookParam p) throws IllegalAccessException {
                 sceneGear = FanPolicy.INHERIT;
-                if (Boolean.TRUE.equals(p.getObjectExtra("restoreFast"))) fast.setBoolean(p.args[0], true);
+                if (Boolean.TRUE.equals(p.getObjectExtra("restoreFast"))) fastFlag.setBoolean(p.args[0], true);
                 if (Boolean.TRUE.equals(p.getObjectExtra("restoreLock"))) locked.setBoolean(p.args[0], true);
                 Integer originalRange = (Integer) p.getObjectExtra("restoreRange");
                 if (originalRange != null) range.setInt(p.args[0], originalRange);
             }
         });
-        XposedBridge.hookMethod(scene, new XC_MethodHook() {
+        hooks.hook(scene, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) throws Throwable {
                 Object state = p.args[1];
                 // X has finished eligibility checks. Give OEM accounting the actual screen and range.
@@ -145,7 +162,7 @@ final class PowerKeeperHooks {
                 if (original != null) stockMode.setInt(p.args[1], original);
             }
         });
-        XposedBridge.hookMethod(write, new XC_MethodHook() {
+        hooks.hook(write, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if (!"target_level".equals(p.args[0])) return;
                 int requested = FanRules.number((String) p.args[1]);
@@ -155,21 +172,14 @@ final class PowerKeeperHooks {
         });
         // Keep the public gear consistent with the driver. The private requested
         // gear stays available to the stock temperature hysteresis and self-clean timer.
-        XposedBridge.hookMethod(publish, new XC_MethodHook() {
+        hooks.hook(publish, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if ("fan_level".equals(p.args[1])) p.args[2] = FanRules.capped((int) p.args[2], maxGear);
             }
         });
-        deoptimizeFanCallers(handler, snapshot);
-    }
-
-    private static void deoptimizeFanCallers(Class<?> handler, Class<?> snapshot) throws NoSuchMethodException {
-        // Precompiled stock methods can inline the gear writer or the Settings publication.
-        // LSPosed exposes this extension beyond the API 82 compile-time stubs.
-        FanModule.deoptimize(handler.getDeclaredMethod("A", int.class, snapshot),
-                handler.getDeclaredMethod("X", snapshot), handler.getDeclaredMethod("handleMessage", Message.class),
-                handler.getDeclaredMethod("x", String.class), handler.getDeclaredMethod("L"),
-                handler.getDeclaredMethod("n"), handler.getDeclaredMethod("C"), handler.getDeclaredMethod("e"));
+        FanModule.deoptimize(setGear, evaluate, message, refreshPolicy);
+        FanModule.deoptimizeIfPresent(handler, "x", String.class);
+        for (String caller : new String[]{"L", "n", "e"}) FanModule.deoptimizeIfPresent(handler, caller);
     }
 
     private void attach(Handler owner) {
@@ -217,9 +227,9 @@ final class PowerKeeperHooks {
             FanRules.BuckVote vote = FanRules.buckVote(votes);
             if (vote == FanRules.BuckVote.OTHER) return false;
             // smart_chg itself is restricted to the vendor service on this ROM.
-            Object miCharge = XposedHelpers.getObjectField(fan, "e");
+            Object miCharge = chargeService.get(fan);
             if (miCharge == null) return false;
-            String flags = (String) XposedHelpers.callMethod(miCharge, "getMiChargePath", "smart_chg");
+            String flags = (String) readChargePath.invoke(miCharge, "smart_chg");
             int level = -1;
             int currentUa = Integer.MIN_VALUE;
             if (vote == FanRules.BuckVote.ONLINE_OFF && battery != null) {
@@ -232,7 +242,7 @@ final class PowerKeeperHooks {
                 XposedBridge.log("warsaw Fans Control: paused rapid-charge cooling (" + vote + detail + ")");
             }
             return stop;
-        } catch (IOException | RuntimeException | XposedHelpers.InvocationTargetError e) {
+        } catch (IOException | ReflectiveOperationException | RuntimeException e) {
             return false;
         }
     }
@@ -260,7 +270,7 @@ final class PowerKeeperHooks {
             loadPolicy = false;
         }
         int mode = Settings.Secure.getInt(resolver, FanModule.PROTECT_MODE, 1);
-        boolean watching = mode == 2 && Settings.Global.getInt(resolver, FanModule.FIX_CHARGE, 1) == 1
+        boolean watching = readChargePath != null && mode == 2 && Settings.Global.getInt(resolver, FanModule.FIX_CHARGE, 1) == 1
                 && XposedHelpers.getBooleanField(fan, "I") && XposedHelpers.getBooleanField(fan, "y")
                 && XposedHelpers.getBooleanField(fan, "B") && FanRules.cablePresent();
         held = watching && limitStoppedCharge(mode);

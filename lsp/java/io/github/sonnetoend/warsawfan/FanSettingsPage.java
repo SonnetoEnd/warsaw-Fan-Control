@@ -53,18 +53,36 @@ final class FanSettingsPage {
         this.telemetry = telemetry;
     }
 
-    static void install(ClassLoader loader) throws ReflectiveOperationException {
-        installModeController(loader);
+    static void install(ClassLoader loader, FanHooks hooks) throws ReflectiveOperationException {
         Class<?> fragment = loader.loadClass("com.android.settings.coolingfan.MiuiCoolingFanSettings");
+        Class<?> dropDown = loader.loadClass("miuix.preference.DropDownPreference");
+        dropDown.getConstructor(Context.class);
+        dropDown.getMethod("setEntries", CharSequence[].class);
+        dropDown.getMethod("setEntryValues", CharSequence[].class);
+        dropDown.getMethod("setValueIndex", int.class);
+        dropDown.getMethod("setValue", String.class);
+        dropDown.getMethod("getValue");
+        dropDown.getMethod("getEntries");
+        dropDown.getMethod("getEntryValues");
+        Class<?> text = loader.loadClass("miuix.preference.TextPreference");
+        text.getConstructor(Context.class);
+        XposedHelpers.findMethodBestMatch(text, "setText", String.class);
+        Class<?> toggle = loader.loadClass("com.android.settingslib.miuisettings.preference.SwitchPreference");
+        toggle.getConstructor(Context.class);
+        toggle.getMethod("setChecked", boolean.class);
+        loader.loadClass("androidx.preference.Preference").getConstructor(Context.class);
+        loader.loadClass("androidx.preference.Preference$OnPreferenceChangeListener");
+        loader.loadClass("androidx.preference.Preference$OnPreferenceClickListener");
+        installModeController(loader, hooks);
         XC_MethodHook addRows = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) throws Throwable {
-                addPreferences(p.thisObject, loader);
+                addPreferences(p.thisObject, loader, dropDown);
             }
         };
-        XposedBridge.hookMethod(fragment.getDeclaredMethod("onCreatePreferences", Bundle.class, String.class), addRows);
-        XposedBridge.hookMethod(fragment.getDeclaredMethod("onCreate", Bundle.class), addRows);
+        hooks.hook(FanHooks.method(fragment, "onCreatePreferences", void.class, Bundle.class, String.class), addRows);
+        hooks.hook(FanHooks.method(fragment, "onCreate", void.class, Bundle.class), addRows);
         // The page inherits these lifecycle methods from the Settings dashboard.
-        XposedBridge.hookMethod(fragment.getMethod("onResume"), new XC_MethodHook() {
+        hooks.hook(fragment.getMethod("onResume"), new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 if (!fragment.isInstance(p.thisObject)) return;
                 FanSettingsPage page = pageOf(p.thisObject);
@@ -75,7 +93,7 @@ final class FanSettingsPage {
                 }
             }
         });
-        XposedBridge.hookMethod(fragment.getMethod("onPause"), new XC_MethodHook() {
+        hooks.hook(fragment.getMethod("onPause"), new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if (!fragment.isInstance(p.thisObject)) return;
                 FanSettingsPage page = pageOf(p.thisObject);
@@ -84,17 +102,18 @@ final class FanSettingsPage {
         });
     }
 
-    private static void installModeController(ClassLoader loader) throws ReflectiveOperationException {
+    private static void installModeController(ClassLoader loader, FanHooks hooks) throws ReflectiveOperationException {
         Class<?> controller = loader.loadClass("com.android.settings.coolingfan.FanModeController");
         Class<?> preference = loader.loadClass("androidx.preference.Preference");
-        XposedBridge.hookMethod(controller.getDeclaredMethod("getCurrentMode"), new XC_MethodHook() {
+        FanHooks.readField(controller, "mContext", Context.class);
+        hooks.hook(FanHooks.method(controller, "getCurrentMode", String.class), new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 Context context = (Context) XposedHelpers.getObjectField(p.thisObject, "mContext");
                 int mode = Settings.Secure.getInt(context.getContentResolver(), FanPolicySettings.MODE, FanPolicy.STOCK);
                 p.setResult(FanPolicySettings.valueFor(mode, (String) p.getResult()));
             }
         });
-        XposedBridge.hookMethod(controller.getDeclaredMethod("onPreferenceChange", preference, Object.class),
+        hooks.hook(FanHooks.method(controller, "onPreferenceChange", boolean.class, preference, Object.class),
                 new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 int mode = FanPolicySettings.modeFor(p.args[1]);
@@ -110,31 +129,33 @@ final class FanSettingsPage {
                     p.setResult(Settings.Secure.putInt(context.getContentResolver(), FanPolicySettings.MODE, FanPolicy.STOCK));
             }
         });
-        FanModule.deoptimize(controller.getDeclaredMethod("updateState", preference),
-                controller.getDeclaredMethod("updateFanModeState"));
+        FanModule.deoptimizeIfPresent(controller, "updateState", preference);
+        FanModule.deoptimizeIfPresent(controller, "updateFanModeState");
     }
 
     private static FanSettingsPage pageOf(Object fragment) {
         return (FanSettingsPage) XposedHelpers.getAdditionalInstanceField(fragment, PAGE);
     }
 
-    private static void addPreferences(Object fragment, ClassLoader loader) throws ClassNotFoundException {
+    private static void addPreferences(Object fragment, ClassLoader loader, Class<?> dropDown) throws ClassNotFoundException {
         Object controls = callMethod(fragment, "findPreference", "cooling_fan_settings");
         Object extras = callMethod(fragment, "findPreference", "fan_other_features_category");
-        if (controls == null || extras == null || callMethod(fragment, "findPreference", FanLimits.LEGACY_GEAR) != null) return;
+        Object mode = callMethod(fragment, "findPreference", "fan_mode");
+        if (controls == null || extras == null || !dropDown.isInstance(mode)
+                || callMethod(fragment, "findPreference", FanLimits.LEGACY_GEAR) != null) return;
         Context context = (Context) callMethod(controls, "getContext");
         Object cap = preference(loader, "miuix.preference.DropDownPreference", context,
                 FanLimits.LEGACY_GEAR, "风扇转速上限");
-        callMethod(cap, "setEntries", (Object) new CharSequence[]{choice(0), choice(1), choice(2),
-                choice(3), choice(4), "自定义"});
+        int[] targets = FanRules.readGearTargets();
+        callMethod(cap, "setEntries", (Object) new CharSequence[]{"跟随系统", gearLabel(1, targets), gearLabel(2, targets),
+                gearLabel(3, targets), gearLabel(4, targets), "自定义"});
         callMethod(cap, "setEntryValues", (Object) new CharSequence[]{"0", "1", "2", "3", "4", "custom"});
         Object customRow = preference(loader, "miuix.preference.TextPreference", context,
                 "k90_fan_custom_rpm", "自定义目标转速");
         Object telemetry = preference(loader, "androidx.preference.Preference", context,
                 "k90_fan_readings", "实时转速");
         FanSettingsPage page = new FanSettingsPage(context, loader, cap, customRow, telemetry);
-        page.modeRow = callMethod(fragment, "findPreference", "fan_mode");
-        page.extendModes();
+        page.modeRow = mode;
         page.appsRow = preference(loader, "androidx.preference.Preference", context,
                 FanPolicySettings.APPS, "应用配置");
         page.lockRow = preference(loader, "com.android.settingslib.miuisettings.preference.SwitchPreference",
@@ -191,6 +212,7 @@ final class FanSettingsPage {
         callMethod(customRow, "setOnPreferenceClickListener", click);
         callMethod(page.appsRow, "setOnPreferenceClickListener", click);
         callMethod(telemetry, "setSelectable", false);
+        if (!page.extendModes()) return;
         callMethod(controls, "addPreference", cap);
         callMethod(controls, "addPreference", customRow);
         callMethod(extras, "addPreference", fix);
@@ -210,16 +232,27 @@ final class FanSettingsPage {
         }
     }
 
-    private void extendModes() {
-        CharSequence[] values = (CharSequence[]) callMethod(modeRow, "getEntryValues");
-        if (Arrays.asList(values).contains(FanPolicySettings.BURST_VALUE)) return;
-        CharSequence[] titles = (CharSequence[]) callMethod(modeRow, "getEntries");
-        Object adapter = XposedHelpers.getObjectField(modeRow, "mContentAdapter");
-        CharSequence[] summaries = (CharSequence[]) XposedHelpers.getObjectField(adapter, "mSummaries");
-        CharSequence[] details = summaries == null ? new CharSequence[titles.length] : Arrays.copyOf(summaries, titles.length);
-        callMethod(modeRow, "setSummaries", (Object) append(details, "在启用的场景使用 4 档", "按前台应用切换风扇档位"));
+    private boolean extendModes() {
+        Object entries = callMethod(modeRow, "getEntries");
+        Object entryValues = callMethod(modeRow, "getEntryValues");
+        if (!(entries instanceof CharSequence[]) || !(entryValues instanceof CharSequence[])) return false;
+        CharSequence[] titles = (CharSequence[]) entries;
+        CharSequence[] values = (CharSequence[]) entryValues;
+        if (values.length == 0 || titles.length != values.length) return false;
+        if (Arrays.asList(values).contains(FanPolicySettings.BURST_VALUE)) return true;
+        try {
+            Object adapter = XposedHelpers.getObjectField(modeRow, "mContentAdapter");
+            if (adapter != null) {
+                CharSequence[] summaries = (CharSequence[]) XposedHelpers.getObjectField(adapter, "mSummaries");
+                CharSequence[] details = summaries == null ? new CharSequence[titles.length] : Arrays.copyOf(summaries, titles.length);
+                callMethod(modeRow, "setSummaries", (Object) append(details, "在启用的场景使用 4 档", "按前台应用切换风扇档位"));
+            }
+        } catch (NoSuchFieldError | NoSuchMethodError | ClassCastException ignored) {
+            // Some versions expose the entries and values without per-entry descriptions.
+        }
         callMethod(modeRow, "setEntries", (Object) append(titles, FanPolicySettings.BURST_TITLE, FanPolicySettings.APPS_TITLE));
         callMethod(modeRow, "setEntryValues", (Object) append(values, FanPolicySettings.BURST_VALUE, FanPolicySettings.APPS_VALUE));
+        return true;
     }
 
     private static CharSequence[] append(CharSequence[] values, String first, String second) {
@@ -268,10 +301,8 @@ final class FanSettingsPage {
 
     private static String rpm(int value) { return String.format(Locale.CHINA, "%,d rpm", value); }
 
-    private static String choice(int value) {
-        if (FanRules.custom(value)) return "自定义 · " + rpm(value);
-        if (FanRules.isGear(value)) return value + " 档 · " + rpm(FanRules.RPM[value]);
-        return "跟随系统";
+    private static String gearLabel(int gear, int[] targets) {
+        return gear + " 档" + (gear < targets.length ? " · " + rpm(targets[gear]) : "");
     }
 
     private void readSelection() {
@@ -291,7 +322,17 @@ final class FanSettingsPage {
         callMethod(cap, "setSummary", summary);
     }
 
-    private void chooseRpm() throws ClassNotFoundException {
+    private void chooseRpm() {
+        try {
+            showRpmPicker();
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError | XposedHelpers.InvocationTargetError e) {
+            XposedBridge.log("warsaw Fans Control: custom RPM picker unavailable (" + e + ")");
+            Toast.makeText(context, "当前系统无法打开自定义转速选择器", Toast.LENGTH_LONG).show();
+            readSelection();
+        }
+    }
+
+    private void showRpmPicker() throws ClassNotFoundException {
         Object builder = XposedHelpers.newInstance(loader.loadClass("miuix.appcompat.app.AlertDialog$Builder"), context);
         Context theme = (Context) callMethod(builder, "getContext");
         View picker = (View) XposedHelpers.newInstance(loader.loadClass("miuix.pickerwidget.widget.NumberPicker"), theme);

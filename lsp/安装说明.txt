@@ -1,15 +1,15 @@
-warsaw Fans Control · LSPosed v0.4.3
+warsaw Fans Control · LSPosed v0.4.4
 
-从 v0.4.2 或更早版本换装时，先记下应用规则和转速上限，再到 LSPosed 停用旧包 dev.k90fan.control。Android 将新版识别为独立应用，旧包私有配置需要在新版重新设置。使用自定义转速时，还需在 SukiSU 为新包重新授予 Root。
+从 v0.4.3 可直接覆盖安装。若从 v0.4.2 或更早版本换装，先记下应用规则和转速上限，再到 LSPosed 停用旧包 dev.k90fan.control。Android 将新版识别为独立应用，旧包私有配置需要在新版重新设置。使用自定义转速时，还需在 SukiSU 为新包重新授予 Root。
 
-安装 warsaw-Fans-Control-v0.4.3.apk。在 LSPosed 启用新包 io.github.sonnetoend.warsawfan，勾选「设置」（com.android.settings）、「电量和性能」（com.miui.powerkeeper）和「系统界面」（com.android.systemui），然后重启手机。
+安装 warsaw-Fans-Control-v0.4.4.apk。在 LSPosed 启用新包 io.github.sonnetoend.warsawfan，勾选「设置」（com.android.settings）、「电量和性能」（com.miui.powerkeeper）和「系统界面」（com.android.systemui），然后重启手机。
 
 在系统风扇设置或控制中心风扇磁贴的详情面板选择「狂暴模式」或「按应用自定义」。狂暴模式在已启用的散热场景请求 4 档。选按应用自定义后，打开「应用配置」，按名称或包名搜索。点卡片右侧可选智能调频、静谧模式、高速强冷、狂暴模式或关闭风扇。选「智能调频」可删除该应用的固定档位。旧版保存的 3 档规则可继续使用。右上角可以排序或显示系统应用。重新选择原厂模式即可退出扩展模式。
 
 「息屏时允许风扇继续运行」默认关闭。开启后，锁屏时仍按当前场景和上限散热。总开关、录音和通话场景继续由系统判断。
 
-「风扇转速上限」可选择跟随系统、原厂 1 至 4 档或自定义。原厂各档目标依次为 12,000、14,000、16,000、19,800 rpm。自定义支持 12,000 至 19,800 rpm，每步 100 rpm，需要在 SukiSU 给 warsaw Fans Control 授予 Root。实时测速可能超过目标值。
+「风扇转速上限」可选择跟随系统、原厂 1 至 4 档或自定义。实测设备的原厂各档目标依次为 12,000、14,000、16,000、19,800 rpm。自定义支持 12,000 至 19,800 rpm，每步 100 rpm，需要在 SukiSU 给 warsaw Fans Control 授予 Root。实时测速可能超过目标值。
 
 「80% 停充时退出极速充电散热」可独立开关。保护生效、驱动停充后，即使电量回落到 79% 且电池端电流接近零，模块也会退出极速充电散热。
 
-适配 REDMI K90 Ultra（warsaw）、HyperOS OS4.0.8.0.XHPCNXM 和 PowerKeeper 4.2.00。自定义目标转速适配 Haruhi 6.6.142-android15-8-4k-Haruhi-26w37f 内核。
+目前仅在一台 REDMI K90 Ultra（warsaw）上实测正常。测试环境为 HyperOS OS4.0.8.0.XHPCNXM、「电量和性能」4.2.00 和 Haruhi 6.6.142-android15-8-4k-Haruhi-26w37f 内核。设置、电量服务和系统界面的功能按各自的风扇接口启用。自定义转速会在加载内置驱动前核对设备、内核和驱动标识。

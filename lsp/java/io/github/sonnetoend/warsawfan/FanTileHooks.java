@@ -16,7 +16,6 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 
 import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
 import static de.robv.android.xposed.XposedHelpers.callMethod;
@@ -36,24 +35,34 @@ final class FanTileHooks {
                 XposedHelpers.getStaticObjectField(UserHandle.class, "CURRENT"));
     }
 
-    void install(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> detail = loader.loadClass("com.android.systemui.qs.QSDetailContent");
+    void install(ClassLoader loader, FanHooks hooks) throws ReflectiveOperationException {
+        Class<?> detail = loader.loadClass("com.android.systemui.qs.QSDetailContent").asSubclass(View.class);
         Class<?> item = loader.loadClass(detail.getName() + "$Item");
-        Class<?> choice = loader.loadClass(detail.getName() + "$SelectableItem");
+        Class<?> choice = loader.loadClass(detail.getName() + "$SelectableItem").asSubclass(item);
         Class<?> fan = loader.loadClass("com.android.systemui.qs.tiles.CoolingFanTile$CoolingFanDetailAdapter");
-        Method update = fan.getDeclaredMethod("updateItems");
-        Method click = fan.getDeclaredMethod("onDetailItemClick", item);
-        Method setItems = detail.getDeclaredMethod("setItems", Array.newInstance(item, 0).getClass());
+        Method update = FanHooks.method(fan, "updateItems", void.class);
+        Method click = FanHooks.method(fan, "onDetailItemClick", void.class, item);
+        Method setItems = FanHooks.method(detail, "setItems", void.class, Array.newInstance(item, 0).getClass());
+        FanHooks.method(detail, "getSuffix", String.class);
+        FanHooks.method(detail, "setItemClicked", void.class, boolean.class);
+        FanHooks.readField(fan, "detailView", detail);
+        choice.getDeclaredConstructor();
+        for (String field : new String[]{"tag", "title", "contentDescription"})
+            FanHooks.writeField(choice, field, String.class);
+        for (String field : new String[]{"isForceSingle", "selectable", "selected"})
+            FanHooks.writeField(choice, field, boolean.class);
+        FanHooks.writeField(choice, "iconRes", int.class);
+        FanHooks.writeField(choice, "icon2Res", int.class);
         int checkmark = drawable("ic_qs_coolingfan_mode_selected");
         int burstIcon = drawable("ic_qs_coolingfan_mode_performance");
         int appsIcon = drawable("ic_qs_coolingfan_mode_smart");
 
-        XposedBridge.hookMethod(update, new XC_MethodHook() {
+        hooks.hook(update, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if (adapter.get() != p.thisObject) adapter = new WeakReference<>(p.thisObject);
             }
         });
-        XposedBridge.hookMethod(setItems, new XC_MethodHook() {
+        hooks.hook(setItems, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 Object[] original = (Object[]) p.args[0];
                 Object owner = adapter.get();
@@ -76,7 +85,7 @@ final class FanTileHooks {
                 p.args[0] = expanded;
             }
         });
-        XposedBridge.hookMethod(click, new XC_MethodHook() {
+        hooks.hook(click, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if (!choice.isInstance(p.args[0])) return;
                 int mode = FanPolicySettings.modeFor(getObjectField(p.args[0], "tag"));
@@ -103,9 +112,9 @@ final class FanTileHooks {
                     callMethod(owner, "updateItems");
             }
         };
+        FanModule.deoptimize(update);
         callMethod(context.getContentResolver(), "registerContentObserver",
                 Settings.Secure.getUriFor(FanPolicySettings.MODE), false, changes, -1);
-        FanModule.deoptimize(update);
     }
 
     private int drawable(String name) {

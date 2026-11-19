@@ -1,6 +1,8 @@
 package io.github.sonnetoend.warsawfan;
 
 import java.io.BufferedReader;
+import java.io.DataInputStream;
+import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
 
@@ -16,6 +18,23 @@ final class FanRules {
 
     static boolean isGear(int value) {
         return value >= 1 && value < RPM.length;
+    }
+
+    static int[] readGearTargets() {
+        // Device-tree cells are big-endian duty/RPM pairs, starting with the stopped fan.
+        try (DataInputStream input = new DataInputStream(new FileInputStream(FAN + "of_node/duty_speed_map"))) {
+            int[] targets = new int[RPM.length];
+            for (int gear = 0; gear < targets.length; gear++) {
+                int duty = input.readInt();
+                int target = input.readInt();
+                if (gear == 0 ? duty != 0 || target != 0 : duty <= 0 || target <= targets[gear - 1])
+                    return new int[0];
+                targets[gear] = target;
+            }
+            return targets;
+        } catch (IOException | SecurityException unavailable) {
+            return new int[0];
+        }
     }
 
     static boolean custom(int value) {
