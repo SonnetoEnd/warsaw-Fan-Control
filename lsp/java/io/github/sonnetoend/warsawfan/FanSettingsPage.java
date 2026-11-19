@@ -326,7 +326,7 @@ final class FanSettingsPage {
         try {
             showRpmPicker();
         } catch (ReflectiveOperationException | RuntimeException | LinkageError | XposedHelpers.InvocationTargetError e) {
-            XposedBridge.log("warsaw Fans Control: custom RPM picker unavailable (" + e + ")");
+            XposedBridge.log("warsaw Fan Control: custom RPM picker unavailable (" + e + ")");
             Toast.makeText(context, "当前系统无法打开自定义转速选择器", Toast.LENGTH_LONG).show();
             readSelection();
         }

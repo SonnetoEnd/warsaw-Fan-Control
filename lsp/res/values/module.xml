@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">warsaw Fans Control</string>
+    <string name="app_name">warsaw Fan Control</string>
     <string name="module_description">为系统风扇设置和控制中心加入狂暴、按应用调速与息屏运行，支持转速上限和 80% 停充修正。</string>
     <string-array name="module_scope">
         <item>com.miui.powerkeeper</item>

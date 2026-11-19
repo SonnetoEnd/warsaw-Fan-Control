@@ -1,4 +1,4 @@
-# warsaw Fans Control
+# warsaw Fan Control
 
 LSPosed 模块为 HyperOS 风扇增加息屏运行、狂暴模式和按应用调速。系统设置和控制中心共用同一模式，设置页还提供转速上限、实时测速和 80% 停充修正。
 
@@ -6,9 +6,9 @@ LSPosed 模块为 HyperOS 风扇增加息屏运行、狂暴模式和按应用调
 
 ## 安装和使用
 
-从 v0.4.3 可直接覆盖安装。若从 v0.4.2 或更早版本换装，先记下应用规则和转速上限，再到 LSPosed 停用旧包 `dev.k90fan.control`。Android 将新版识别为独立应用，旧包私有配置需要在新版重新设置。使用自定义转速时，还需在 SukiSU 为新包重新授予 Root。
+已安装 v0.4.3 或后续版本的用户可以直接覆盖升级。若从 v0.4.2 或更早版本换装，先记下应用规则和转速上限，再到 LSPosed 停用旧包 `dev.k90fan.control`。Android 将新版识别为独立应用，旧包私有配置需要在新版重新设置。使用自定义转速时，还需在 SukiSU 为新包重新授予 Root。
 
-1. 下载并安装 `warsaw-Fans-Control-v0.4.4.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
+1. 下载并安装 `warsaw-Fan-Control-v0.4.5.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fan-Control/releases/latest)
 2. 在 LSPosed 启用新包 `io.github.sonnetoend.warsawfan`，勾选「设置」`com.android.settings`、「电量和性能」`com.miui.powerkeeper` 和「系统界面」`com.android.systemui`。
 3. 重启手机，打开系统原来的风扇设置页。
 4. 保留「极速充电时启用」，在电池设置中选择 80% 充电保护。新增的「80% 停充时退出极速充电散热」默认开启。
@@ -33,7 +33,7 @@ LSPosed 模块为 HyperOS 风扇增加息屏运行、狂暴模式和按应用调
 
 - **跟随系统**是新安装的默认值。退出自定义时还原驱动的原始转速表，原厂负责启停和选择档位。80% 停充修正可独立开关。
 - **原厂 1 至 4 档**限制允许的最高档位，实测设备上依次对应 12,000、14,000、16,000 和 19,800 rpm。页面从本机设备树读取各档目标，无法读取时只显示档位。升级会沿用 v0.2 已保存的档位。
-- **自定义**打开 HyperOS 的数字滚轮，在 12,000 至 19,800 rpm 之间每格调整 100 rpm。应用后可点「自定义目标转速」再次编辑。首次使用前，在 SukiSU 中向「warsaw Fans Control」授予 Root。实测使用 Haruhi `6.6.142-android15-8-4k-Haruhi-26w37f` 内核。自定义转速会在加载内置驱动前核对设备、内核版本、内核类型信息和风扇驱动标识。高于上限的档位使用新的目标，较低档位和停转仍由原厂控制。重启后，PowerKeeper 加载模块时会重新应用已保存的上限。
+- **自定义**打开 HyperOS 的数字滚轮，在 12,000 至 19,800 rpm 之间每格调整 100 rpm。应用后可点「自定义目标转速」再次编辑。首次使用前，在 SukiSU 中向「warsaw Fan Control」授予 Root。实测使用 Haruhi `6.6.142-android15-8-4k-Haruhi-26w37f` 内核。自定义转速会在加载内置驱动前核对设备、内核版本、内核类型信息和风扇驱动标识。高于上限的档位使用新的目标，较低档位和停转仍由原厂控制。重启后，PowerKeeper 加载模块时会重新应用已保存的上限。
 
 本机设备树 `/sys/firmware/devicetree/base/soc/xiaomi_fan/duty_speed_map` 中的占空比和目标 rpm 依次为 `(0,0) (51,12000) (65,14000) (73,16000) (98,19800)`。页面的「实时转速」读取 `real_speed`。实机内核日志记录过 20,416 和 20,457 rpm。19,800 rpm 表示四档控制目标，测速值可以超过它。
 

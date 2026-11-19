@@ -43,11 +43,11 @@ public final class FanModule implements IXposedHookLoadPackage {
                     } else {
                         new FanTileHooks(context).install(loader, hooks);
                     }
-                    XposedBridge.log("warsaw Fans Control: fan hooks active in " + pkg.packageName);
+                    XposedBridge.log("warsaw Fan Control: fan hooks active in " + pkg.packageName);
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError
                         | XposedHelpers.ClassNotFoundError | XposedHelpers.InvocationTargetError mismatch) {
                     hooks.rollback();
-                    XposedBridge.log("warsaw Fans Control: skipping fan hooks in " + pkg.packageName + " (" + mismatch + ")");
+                    XposedBridge.log("warsaw Fan Control: skipping fan hooks in " + pkg.packageName + " (" + mismatch + ")");
                 }
             }
         });

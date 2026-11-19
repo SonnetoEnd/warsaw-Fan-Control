@@ -239,7 +239,7 @@ final class PowerKeeperHooks {
             boolean stop = FanRules.activeProtection(mode, FanRules.number(flags), vote, level, currentUa, held);
             if (stop && !held) {
                 String detail = vote == FanRules.BuckVote.ONLINE_OFF ? ", " + level + "%, " + currentUa + " uA" : "";
-                XposedBridge.log("warsaw Fans Control: paused rapid-charge cooling (" + vote + detail + ")");
+                XposedBridge.log("warsaw Fan Control: paused rapid-charge cooling (" + vote + detail + ")");
             }
             return stop;
         } catch (IOException | ReflectiveOperationException | RuntimeException e) {
@@ -274,7 +274,7 @@ final class PowerKeeperHooks {
                 && XposedHelpers.getBooleanField(fan, "I") && XposedHelpers.getBooleanField(fan, "y")
                 && XposedHelpers.getBooleanField(fan, "B") && FanRules.cablePresent();
         held = watching && limitStoppedCharge(mode);
-        if (previousHold && !held) XposedBridge.log("warsaw Fans Control: released rapid-charge cooling");
+        if (previousHold && !held) XposedBridge.log("warsaw Fan Control: released rapid-charge cooling");
         boolean updateCap = maxGear != previousMax || (initialSync && FanRules.isGear(maxGear));
         if (held != previousHold || updateCap || policyChanged) {
             // C rebuilds the snapshot from live OEM state and arbitrates all scenes.

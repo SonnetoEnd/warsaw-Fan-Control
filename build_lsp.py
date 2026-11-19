@@ -26,7 +26,7 @@ def build(sdk, xposed_api, output, driver):
             raise SystemExit(f"Missing Android build input: {file}")
 
     version = ET.parse(SOURCE / "AndroidManifest.xml").getroot().get("{http://schemas.android.com/apk/res/android}versionName")
-    stem = f"warsaw-Fans-Control-v{version}"
+    stem = f"warsaw-Fan-Control-v{version}"
     output.mkdir(exist_ok=True)
     with TemporaryDirectory(dir=output) as tmp:
         work = Path(tmp)

@@ -30,7 +30,7 @@ final class FanLimits {
 
     static String errorText(String code) {
         switch (code) {
-            case "root_required": return "请在 Root 管理器中给「warsaw Fans Control」授权后重试";
+            case "root_required": return "请在 Root 管理器中给「warsaw Fan Control」授权后重试";
             case "unsupported_kernel":
             case "unsupported_driver":
             case "unsupported_device":
