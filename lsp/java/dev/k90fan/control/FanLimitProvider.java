@@ -21,10 +21,20 @@ public final class FanLimitProvider extends ContentProvider {
         return true;
     }
 
-    @Override public Bundle call(String method, String ignored, Bundle args) {
+    @Override public Bundle call(String method, String argument, Bundle args) {
         int uid = Binder.getCallingUid();
         if (uid != Process.SYSTEM_UID && uid != Process.myUid() && uid != 0)
             throw new SecurityException("Only the system fan settings may manage fan limits");
+        if ("readApps".equals(method)) {
+            long identity = Binder.clearCallingIdentity();
+            try {
+                Bundle result = new Bundle();
+                result.putString("rules", AppRuleStore.read(getContext(), argument));
+                return result;
+            } finally {
+                Binder.restoreCallingIdentity(identity);
+            }
+        }
         int legacy = FanRules.legacy(args == null ? 0 : args.getInt("legacy", 0));
         if ("read".equals(method)) return state(legacy);
         if (!"select".equals(method) && !"sync".equals(method))

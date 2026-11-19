@@ -14,7 +14,6 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 
 import de.robv.android.xposed.XC_MethodHook;
@@ -26,10 +25,15 @@ final class PowerKeeperHooks {
     private final BatteryManager battery;
     private volatile Handler fan;
     private ContentObserver observer;
+    private ContentResolver currentUser;
+    private FanPolicy policy = FanPolicy.DEFAULT;
+    private String lastForeground;
+    private int sceneGear = FanPolicy.INHERIT;
     private volatile int maxGear;
     private volatile boolean held;
     private boolean initialSync;
     private boolean loadLimit;
+    private boolean loadPolicy;
     private boolean restoreInFlight;
     private final Runnable refresh = this::refreshSafely;
 
@@ -44,14 +48,21 @@ final class PowerKeeperHooks {
         Class<?> snapshot = loader.loadClass("q.h$h");
         Method init = handler.getDeclaredMethod("B");
         Method evaluate = handler.getDeclaredMethod("X", snapshot);
+        Method scene = handler.getDeclaredMethod("W", String.class, snapshot);
+        Method setGear = handler.getDeclaredMethod("A", int.class, snapshot);
+        setGear.setAccessible(true);
         Method write = handler.getDeclaredMethod("K", String.class, String.class);
         Method message = handler.getDeclaredMethod("handleMessage", Message.class);
         Method publish = XposedHelpers.findMethodExact(Settings.System.class, "putIntForUser",
                 ContentResolver.class, String.class, int.class, int.class);
         handler.getDeclaredMethod("C");
-        for (String field : new String[]{"I", "y", "B", "S", "o", "e"}) handler.getDeclaredField(field);
+        for (String field : new String[]{"I", "y", "B", "S", "o", "e", "f", "j", "k", "K"}) handler.getDeclaredField(field);
         Field fast = XposedHelpers.findField(snapshot, "j");
         Field chargeSceneEnabled = XposedHelpers.findField(snapshot, "n");
+        Field locked = XposedHelpers.findField(snapshot, "g");
+        Field range = XposedHelpers.findField(snapshot, "b");
+        Field foreground = XposedHelpers.findField(snapshot, "e");
+        Field stockMode = XposedHelpers.findField(snapshot, "a");
 
         XposedBridge.hookMethod(init, new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
@@ -59,8 +70,19 @@ final class PowerKeeperHooks {
             }
         });
         XposedBridge.hookMethod(message, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                if (((Message) p.args[0]).what == 7) {
+                    policy = FanPolicy.DEFAULT;
+                    lastForeground = null;
+                    loadPolicy = true;
+                }
+            }
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 int what = ((Message) p.args[0]).what;
+                if (what == -9 && policy.mode == FanPolicy.PER_APP) {
+                    // Stock records a new foreground package and returns without evaluating the fan.
+                    XposedHelpers.callMethod(p.thisObject, "C");
+                }
                 // Policy reload, fast type, user switch, main switch, rapid scene, battery/plug.
                 if (what == 1 || what == 5 || what == 7 || what == 12 || what == 16 || what == 21) queueRefresh();
             }
@@ -68,13 +90,59 @@ final class PowerKeeperHooks {
         XposedBridge.hookMethod(evaluate, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) throws IllegalAccessException {
                 Object state = p.args[0];
+                boolean screenLocked = locked.getBoolean(state);
+                String name = (String) foreground.get(state);
+                if (name != null && !name.isEmpty() && !FanPolicy.isLockSurface(name)) lastForeground = name;
+                if (screenLocked && policy.keepOnLock && FanPolicy.isLockSurface(name)) name = lastForeground;
+                sceneGear = policy.requestedGear(name);
+                if (policy.keepOnLock && screenLocked) {
+                    p.setObjectExtra("restoreLock", Boolean.TRUE);
+                    locked.setBoolean(state, false);
+                }
+                // A configured app is an eligible scene even in the OEM's selected-scenes range.
+                if (policy.mode == FanPolicy.PER_APP && sceneGear != FanPolicy.INHERIT
+                        && range.getInt(state) != 1) {
+                    p.setObjectExtra("restoreRange", range.getInt(state));
+                    range.setInt(state, 1);
+                }
                 if (held && fast.getBoolean(state) && chargeSceneEnabled.getBoolean(state)) {
                     p.setObjectExtra("restoreFast", Boolean.TRUE);
                     fast.setBoolean(state, false);
                 }
             }
             @Override protected void afterHookedMethod(MethodHookParam p) throws IllegalAccessException {
+                sceneGear = FanPolicy.INHERIT;
                 if (Boolean.TRUE.equals(p.getObjectExtra("restoreFast"))) fast.setBoolean(p.args[0], true);
+                if (Boolean.TRUE.equals(p.getObjectExtra("restoreLock"))) locked.setBoolean(p.args[0], true);
+                Integer originalRange = (Integer) p.getObjectExtra("restoreRange");
+                if (originalRange != null) range.setInt(p.args[0], originalRange);
+            }
+        });
+        XposedBridge.hookMethod(scene, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) throws Throwable {
+                Object state = p.args[1];
+                // X has finished eligibility checks. Give OEM accounting the actual screen and range.
+                if (policy.keepOnLock) locked.setBoolean(state, XposedHelpers.getBooleanField(p.thisObject, "K"));
+                if (policy.mode == FanPolicy.PER_APP) range.setInt(state, XposedHelpers.getIntField(p.thisObject, "k"));
+                // A null scene includes OEM microphone, earpiece, lock and out-of-range stops.
+                if (p.args[0] == null) return;
+                int gear = sceneGear;
+                if (gear == FanPolicy.INHERIT) {
+                    // An unconfigured app uses the OEM smart temperature curve in the selected scene.
+                    if (policy.mode == FanPolicy.PER_APP && stockMode.getInt(state) != -1) {
+                        p.setObjectExtra("originalMode", stockMode.getInt(state));
+                        stockMode.setInt(state, -1);
+                    }
+                    return;
+                }
+                // Start the next stock temperature curve from its entry thresholds after a fixed override.
+                XposedHelpers.setIntField(p.thisObject, "j", Integer.MIN_VALUE);
+                if (gear != XposedHelpers.getIntField(p.thisObject, "o")) setGear.invoke(p.thisObject, gear, state);
+                p.setResult(null);
+            }
+            @Override protected void afterHookedMethod(MethodHookParam p) throws IllegalAccessException {
+                Integer original = (Integer) p.getObjectExtra("originalMode");
+                if (original != null) stockMode.setInt(p.args[1], original);
             }
         });
         XposedBridge.hookMethod(write, new XC_MethodHook() {
@@ -95,22 +163,13 @@ final class PowerKeeperHooks {
         deoptimizeFanCallers(handler, snapshot);
     }
 
-    private static void deoptimizeFanCallers(Class<?> handler, Class<?> snapshot) {
+    private static void deoptimizeFanCallers(Class<?> handler, Class<?> snapshot) throws NoSuchMethodException {
         // Precompiled stock methods can inline the gear writer or the Settings publication.
         // LSPosed exposes this extension beyond the API 82 compile-time stubs.
-        Method deopt;
-        try {
-            deopt = XposedBridge.class.getMethod("deoptimizeMethod", Member.class);
-        } catch (NoSuchMethodException e) {
-            return;
-        }
-        try {
-            deopt.invoke(null, handler.getDeclaredMethod("A", int.class, snapshot));
-            deopt.invoke(null, handler.getDeclaredMethod("x", String.class));
-            for (String name : new String[]{"L", "n", "C", "e"}) deopt.invoke(null, handler.getDeclaredMethod(name));
-        } catch (ReflectiveOperationException e) {
-            XposedBridge.log(e);
-        }
+        FanModule.deoptimize(handler.getDeclaredMethod("A", int.class, snapshot),
+                handler.getDeclaredMethod("X", snapshot), handler.getDeclaredMethod("handleMessage", Message.class),
+                handler.getDeclaredMethod("x", String.class), handler.getDeclaredMethod("L"),
+                handler.getDeclaredMethod("n"), handler.getDeclaredMethod("C"), handler.getDeclaredMethod("e"));
     }
 
     private void attach(Handler owner) {
@@ -120,18 +179,30 @@ final class PowerKeeperHooks {
             resolver.unregisterContentObserver(observer);
         }
         fan = owner;
+        currentUser = (ContentResolver) XposedHelpers.getObjectField(owner, "f");
+        policy = FanPolicy.DEFAULT;
+        lastForeground = null;
         initialSync = true;
         loadLimit = true;
+        loadPolicy = true;
         held = false;
         observer = new ContentObserver(owner) {
             @Override public void onChange(boolean selfChange, Uri uri) {
                 if (uri == null || FanLimits.URI.equals(uri)) loadLimit = true;
+                if (uri == null) loadPolicy = true;
+                else for (Uri setting : FanPolicySettings.URIS) {
+                    if (setting.equals(uri)) loadPolicy = true;
+                }
                 queueRefresh();
             }
         };
         resolver.registerContentObserver(FanLimits.URI, false, observer);
         resolver.registerContentObserver(Settings.Global.getUriFor(FanModule.FIX_CHARGE), false, observer);
         resolver.registerContentObserver(Settings.Secure.getUriFor(FanModule.PROTECT_MODE), false, observer);
+        // PowerKeeper serves several Android users. The OEM resolver reads USER_CURRENT on each switch.
+        for (Uri setting : FanPolicySettings.URIS) {
+            XposedHelpers.callMethod(resolver, "registerContentObserver", setting, false, observer, -1);
+        }
         queueRefresh();
     }
 
@@ -179,7 +250,15 @@ final class PowerKeeperHooks {
     private void refresh() {
         int previousMax = maxGear;
         boolean previousHold = held;
-        if (loadLimit) readLimit();
+        if (loadLimit) {
+            readLimit();
+            loadPolicy = true;
+        }
+        boolean policyChanged = loadPolicy;
+        if (loadPolicy) {
+            policy = FanPolicySettings.read(currentUser);
+            loadPolicy = false;
+        }
         int mode = Settings.Secure.getInt(resolver, FanModule.PROTECT_MODE, 1);
         boolean watching = mode == 2 && Settings.Global.getInt(resolver, FanModule.FIX_CHARGE, 1) == 1
                 && XposedHelpers.getBooleanField(fan, "I") && XposedHelpers.getBooleanField(fan, "y")
@@ -187,13 +266,13 @@ final class PowerKeeperHooks {
         held = watching && limitStoppedCharge(mode);
         if (previousHold && !held) XposedBridge.log("warsaw Fans Control: released rapid-charge cooling");
         boolean updateCap = maxGear != previousMax || (initialSync && FanRules.isGear(maxGear));
-        if (held != previousHold || updateCap) {
+        if (held != previousHold || updateCap || policyChanged) {
             // C rebuilds the snapshot from live OEM state and arbitrates all scenes.
             XposedHelpers.callMethod(fan, "C");
             if (updateCap) applyCapToRunningFan();
         }
         initialSync = false;
-        if (watching) fan.postDelayed(refresh, 5000);
+        if (watching || loadLimit) fan.postDelayed(refresh, 5000);
     }
 
     private void readLimit() {

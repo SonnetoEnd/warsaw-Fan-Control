@@ -2,6 +2,8 @@ package dev.k90fan.control;
 
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.database.ContentObserver;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,6 +13,7 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -30,6 +33,13 @@ final class FanSettingsPage {
     private final Object customRow;
     private final ClassLoader loader;
     private final Object telemetry;
+    private Object modeRow;
+    private Object appsRow;
+    private Object lockRow;
+    private boolean observing;
+    private final ContentObserver policyObserver = new ContentObserver(main) {
+        @Override public void onChange(boolean selfChange) { readPolicy(); }
+    };
     private final Runnable sample = this::sample;
     private int selected;
     private int lastCustom;
@@ -44,6 +54,7 @@ final class FanSettingsPage {
     }
 
     static void install(ClassLoader loader) throws ReflectiveOperationException {
+        installModeController(loader);
         Class<?> fragment = loader.loadClass("com.android.settings.coolingfan.MiuiCoolingFanSettings");
         XC_MethodHook addRows = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) throws Throwable {
@@ -58,6 +69,7 @@ final class FanSettingsPage {
                 if (!fragment.isInstance(p.thisObject)) return;
                 FanSettingsPage page = pageOf(p.thisObject);
                 if (page != null) {
+                    page.observePolicy();
                     page.readSelection();
                     page.sample();
                 }
@@ -67,9 +79,39 @@ final class FanSettingsPage {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 if (!fragment.isInstance(p.thisObject)) return;
                 FanSettingsPage page = pageOf(p.thisObject);
-                if (page != null) page.main.removeCallbacks(page.sample);
+                if (page != null) page.pause();
             }
         });
+    }
+
+    private static void installModeController(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> controller = loader.loadClass("com.android.settings.coolingfan.FanModeController");
+        Class<?> preference = loader.loadClass("androidx.preference.Preference");
+        XposedBridge.hookMethod(controller.getDeclaredMethod("getCurrentMode"), new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam p) {
+                Context context = (Context) XposedHelpers.getObjectField(p.thisObject, "mContext");
+                int mode = Settings.Secure.getInt(context.getContentResolver(), FanPolicySettings.MODE, FanPolicy.STOCK);
+                p.setResult(FanPolicySettings.valueFor(mode, (String) p.getResult()));
+            }
+        });
+        XposedBridge.hookMethod(controller.getDeclaredMethod("onPreferenceChange", preference, Object.class),
+                new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                int mode = FanPolicySettings.modeFor(p.args[1]);
+                Context context = (Context) callMethod(p.args[0], "getContext");
+                if (mode != FanPolicy.STOCK) {
+                    p.setResult(Settings.Secure.putInt(context.getContentResolver(), FanPolicySettings.MODE, mode));
+                }
+            }
+            @Override protected void afterHookedMethod(MethodHookParam p) {
+                if (!Boolean.TRUE.equals(p.getResult()) || FanPolicySettings.modeFor(p.args[1]) != FanPolicy.STOCK) return;
+                Context context = (Context) callMethod(p.args[0], "getContext");
+                if (Settings.Secure.getInt(context.getContentResolver(), FanPolicySettings.MODE, 0) != FanPolicy.STOCK)
+                    p.setResult(Settings.Secure.putInt(context.getContentResolver(), FanPolicySettings.MODE, FanPolicy.STOCK));
+            }
+        });
+        FanModule.deoptimize(controller.getDeclaredMethod("updateState", preference),
+                controller.getDeclaredMethod("updateFanModeState"));
     }
 
     private static FanSettingsPage pageOf(Object fragment) {
@@ -91,6 +133,13 @@ final class FanSettingsPage {
         Object telemetry = preference(loader, "androidx.preference.Preference", context,
                 "k90_fan_readings", "实时转速");
         FanSettingsPage page = new FanSettingsPage(context, loader, cap, customRow, telemetry);
+        page.modeRow = callMethod(fragment, "findPreference", "fan_mode");
+        page.extendModes();
+        page.appsRow = preference(loader, "androidx.preference.Preference", context,
+                FanPolicySettings.APPS, "应用配置");
+        page.lockRow = preference(loader, "com.android.settingslib.miuisettings.preference.SwitchPreference",
+                context, FanPolicySettings.KEEP_ON_LOCK, "息屏时允许风扇继续运行");
+        callMethod(page.lockRow, "setSummary", "锁屏后继续按当前场景和转速上限散热。");
 
         Object fix = preference(loader, "com.android.settingslib.miuisettings.preference.SwitchPreference",
                 context, FanModule.FIX_CHARGE, "80% 停充时退出极速充电散热");
@@ -100,6 +149,9 @@ final class FanSettingsPage {
         Object onChange = Proxy.newProxyInstance(loader, new Class<?>[]{listener}, (proxy, method, args) -> {
             switch (method.getName()) {
                 case "onPreferenceChange":
+                    if (args[0] == page.lockRow)
+                        return Settings.Secure.putInt(context.getContentResolver(), FanPolicySettings.KEEP_ON_LOCK,
+                                Boolean.TRUE.equals(args[1]) ? 1 : 0);
                     if (args[0] == fix)
                         return Settings.Global.putInt(context.getContentResolver(), FanModule.FIX_CHARGE,
                                 Boolean.TRUE.equals(args[1]) ? 1 : 0);
@@ -121,10 +173,15 @@ final class FanSettingsPage {
         });
         callMethod(cap, "setOnPreferenceChangeListener", onChange);
         callMethod(fix, "setOnPreferenceChangeListener", onChange);
+        callMethod(page.lockRow, "setOnPreferenceChangeListener", onChange);
         Class<?> onClick = loader.loadClass("androidx.preference.Preference$OnPreferenceClickListener");
         Object click = Proxy.newProxyInstance(loader, new Class<?>[]{onClick}, (proxy, method, args) -> {
             switch (method.getName()) {
-                case "onPreferenceClick": if (!page.applying) page.chooseRpm(); return true;
+                case "onPreferenceClick":
+                    if (args[0] == page.appsRow) callMethod(fragment, "startActivity", new Intent()
+                            .setClassName("dev.k90fan.control", "dev.k90fan.control.AppRulesActivity"));
+                    else if (!page.applying) page.chooseRpm();
+                    return true;
                 case "hashCode": return System.identityHashCode(proxy);
                 case "equals": return proxy == args[0];
                 case "toString": return "K90 fan limit click";
@@ -132,18 +189,72 @@ final class FanSettingsPage {
             }
         });
         callMethod(customRow, "setOnPreferenceClickListener", click);
+        callMethod(page.appsRow, "setOnPreferenceClickListener", click);
         callMethod(telemetry, "setSelectable", false);
         callMethod(controls, "addPreference", cap);
         callMethod(controls, "addPreference", customRow);
         callMethod(extras, "addPreference", fix);
+        callMethod(extras, "addPreference", page.lockRow);
+        callMethod(extras, "addPreference", page.appsRow);
         callMethod(extras, "addPreference", telemetry);
         page.readSelection();
+        page.readPolicy();
         callMethod(fix, "setChecked", Settings.Global.getInt(context.getContentResolver(), FanModule.FIX_CHARGE, 1) == 1);
 
         FanSettingsPage previous = pageOf(fragment);
-        if (previous != null) previous.main.removeCallbacks(previous.sample);
+        if (previous != null) previous.pause();
         XposedHelpers.setAdditionalInstanceField(fragment, PAGE, page);
-        if (Boolean.TRUE.equals(callMethod(fragment, "isResumed"))) page.sample();
+        if (Boolean.TRUE.equals(callMethod(fragment, "isResumed"))) {
+            page.observePolicy();
+            page.sample();
+        }
+    }
+
+    private void extendModes() {
+        CharSequence[] values = (CharSequence[]) callMethod(modeRow, "getEntryValues");
+        if (Arrays.asList(values).contains(FanPolicySettings.BURST_VALUE)) return;
+        CharSequence[] titles = (CharSequence[]) callMethod(modeRow, "getEntries");
+        Object adapter = XposedHelpers.getObjectField(modeRow, "mContentAdapter");
+        CharSequence[] summaries = (CharSequence[]) XposedHelpers.getObjectField(adapter, "mSummaries");
+        CharSequence[] details = summaries == null ? new CharSequence[titles.length] : Arrays.copyOf(summaries, titles.length);
+        callMethod(modeRow, "setSummaries", (Object) append(details, "在启用的场景使用 4 档", "按前台应用切换风扇档位"));
+        callMethod(modeRow, "setEntries", (Object) append(titles, FanPolicySettings.BURST_TITLE, FanPolicySettings.APPS_TITLE));
+        callMethod(modeRow, "setEntryValues", (Object) append(values, FanPolicySettings.BURST_VALUE, FanPolicySettings.APPS_VALUE));
+    }
+
+    private static CharSequence[] append(CharSequence[] values, String first, String second) {
+        CharSequence[] result = Arrays.copyOf(values, values.length + 2, CharSequence[].class);
+        result[values.length] = first;
+        result[values.length + 1] = second;
+        return result;
+    }
+
+    private void observePolicy() {
+        if (!observing) {
+            for (android.net.Uri uri : FanPolicySettings.URIS)
+                context.getContentResolver().registerContentObserver(uri, false, policyObserver);
+            observing = true;
+        }
+        readPolicy();
+    }
+
+    private void pause() {
+        main.removeCallbacks(sample);
+        if (observing) {
+            context.getContentResolver().unregisterContentObserver(policyObserver);
+            observing = false;
+        }
+    }
+
+    private void readPolicy() {
+        FanPolicy policy = FanPolicySettings.read(context.getContentResolver());
+        String stock = Integer.toString(Settings.System.getInt(context.getContentResolver(), "fan_mode", -1));
+        String choice = FanPolicySettings.valueFor(policy.mode, stock);
+        if (!choice.equals(callMethod(modeRow, "getValue"))) callMethod(modeRow, "setValue", choice);
+        callMethod(lockRow, "setChecked", policy.keepOnLock);
+        callMethod(appsRow, "setVisible", policy.mode == FanPolicy.PER_APP);
+        int count = policy.apps.size();
+        callMethod(appsRow, "setSummary", count == 0 ? "为每个应用选择风扇模式" : "已为 " + count + " 个应用设置档位");
     }
 
     private static Object preference(ClassLoader loader, String type, Context context, String key, String title)

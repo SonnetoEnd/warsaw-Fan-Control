@@ -1,0 +1,8 @@
+<resources>
+    <style name="FanRulesTheme" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowBackground">@color/rules_background</item>
+    </style>
+    <color name="rules_background">#F5F5F5</color>
+</resources>

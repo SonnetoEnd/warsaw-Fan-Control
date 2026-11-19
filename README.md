@@ -1,13 +1,27 @@
 # warsaw Fans Control
 
-LSPosed 模块在 HyperOS 原有风扇设置页加入 80% 停充修正、风扇转速上限和实时测速。适配 REDMI K90 Ultra（`warsaw`）、HyperOS `OS4.0.8.0.XHPCNXM` 和 PowerKeeper `4.2.00`（40200）。
+LSPosed 模块为 HyperOS 风扇增加息屏运行、狂暴模式和按应用调速。系统设置和控制中心共用同一模式，设置页还提供转速上限、实时测速和 80% 停充修正。适配 REDMI K90 Ultra（`warsaw`）、HyperOS `OS4.0.8.0.XHPCNXM` 和 PowerKeeper `4.2.00`（40200）。
 
 ## 安装和使用
 
-1. 下载并安装 `warsaw-Fans-Control-v0.3.3.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
-2. 在 LSPosed 启用模块，确认作用域勾选「设置」`com.android.settings` 和「电量和性能」`com.miui.powerkeeper`。
+1. 下载并安装 `warsaw-Fans-Control-v0.4.1.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
+2. 在 LSPosed 启用模块，勾选「设置」`com.android.settings`、「电量和性能」`com.miui.powerkeeper` 和「系统界面」`com.android.systemui`。从旧版升级时请补选「系统界面」。
 3. 重启手机，打开系统原来的风扇设置页。
 4. 保留「极速充电时启用」，在电池设置中选择 80% 充电保护。新增的「80% 停充时退出极速充电散热」默认开启。
+
+## 风扇模式
+
+在系统风扇设置的「风扇模式」或控制中心风扇磁贴的详情面板选择模式。初次安装和从 v0.3 升级时沿用原先的系统模式。
+
+- **狂暴模式**在当前散热范围内请求原厂 4 档，目标为 19,800 rpm。选择「部分场景」时，只有系统判定为散热场景才启动。已设定的最高档位或自定义转速上限继续生效。
+- **按应用自定义**会在设置页显示「应用配置」。点应用卡片右侧的模式可选择智能调频、静谧、高速强冷、三档强冷、狂暴或停转。未配置的应用使用原厂智能温控。选回「智能调频」可清除该应用的固定档位。规则随前台应用切换。
+- **息屏时允许风扇继续运行**是独立开关，默认关闭。开启后，锁屏时仍按场景和档位散热。关闭总开关、离开散热场景或触发原厂录音、通话停转条件时，风扇仍可停转。
+
+回到任一原厂模式即可退出狂暴或按应用调速。应用规则会保留，供下次启用。
+
+「应用配置」支持按名称和包名搜索。右上角可以调整排序或显示系统应用。列表适配深浅色和全面屏手势，应用图标从本机读取。
+
+## 转速上限
 
 打开「风扇转速上限」选择调节方式。
 
