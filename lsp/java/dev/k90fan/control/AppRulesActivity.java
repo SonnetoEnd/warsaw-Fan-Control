@@ -40,8 +40,9 @@ import java.util.concurrent.Executors;
 public final class AppRulesActivity extends Activity {
     private static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT;
     private static final int WRAP = ViewGroup.LayoutParams.WRAP_CONTENT;
-    private static final String[] MODES = {"智能调频", "关闭风扇", "静谧模式", "高速强冷", "三档强冷", "狂暴模式"};
-    private static final int[] MENU_GEARS = {-1, 1, 2, 3, 4, 0};
+    // Gear 3 can still be displayed for a profile saved by v0.4.0 or v0.4.1.
+    private static final String[] MODES = {"智能调频", "关闭风扇", "静谧模式", "高速强冷", "原厂 3 档", "狂暴模式"};
+    private static final int[] MENU_GEARS = {FanPolicy.INHERIT, 1, 2, 4, 0};
     private static final String[] SORT = {"应用名称", "包名", "安装时间", "更新时间"};
     private final ExecutorService loader = Executors.newSingleThreadExecutor();
     private final LruCache<String, Bitmap> icons = new LruCache<>(80);
