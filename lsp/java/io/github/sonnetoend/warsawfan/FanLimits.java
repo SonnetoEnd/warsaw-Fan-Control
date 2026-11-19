@@ -1,4 +1,4 @@
-package dev.k90fan.control;
+package io.github.sonnetoend.warsawfan;
 
 import android.content.ContentResolver;
 import android.net.Uri;
@@ -7,7 +7,7 @@ import android.provider.Settings;
 
 // Used by the two OEM processes and by the module's own provider.
 final class FanLimits {
-    static final Uri URI = Uri.parse("content://dev.k90fan.control.limits");
+    static final Uri URI = Uri.parse("content://" + FanModule.MODULE_PACKAGE + ".limits");
     static final String LEGACY_GEAR = "k90_fan_max_gear";
 
     static Bundle request(ContentResolver resolver, String method, int selection) {

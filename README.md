@@ -4,8 +4,10 @@ LSPosed 模块为 HyperOS 风扇增加息屏运行、狂暴模式和按应用调
 
 ## 安装和使用
 
-1. 下载并安装 `warsaw-Fans-Control-v0.4.2.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
-2. 在 LSPosed 启用模块，勾选「设置」`com.android.settings`、「电量和性能」`com.miui.powerkeeper` 和「系统界面」`com.android.systemui`。从旧版升级时请补选「系统界面」。
+从 v0.4.2 或更早版本换装时，先记下应用规则和转速上限，再到 LSPosed 停用旧包 `dev.k90fan.control`。Android 将新版识别为独立应用，旧包私有配置需要在新版重新设置。使用自定义转速时，还需在 SukiSU 为新包重新授予 Root。
+
+1. 下载并安装 `warsaw-Fans-Control-v0.4.3.apk`。同版本 ZIP 内含该 APK 和中文安装说明。[下载最新版本](https://github.com/SonnetoEnd/warsaw-Fans-Control/releases/latest)
+2. 在 LSPosed 启用新包 `io.github.sonnetoend.warsawfan`，勾选「设置」`com.android.settings`、「电量和性能」`com.miui.powerkeeper` 和「系统界面」`com.android.systemui`。
 3. 重启手机，打开系统原来的风扇设置页。
 4. 保留「极速充电时启用」，在电池设置中选择 80% 充电保护。新增的「80% 停充时退出极速充电散热」默认开启。
 

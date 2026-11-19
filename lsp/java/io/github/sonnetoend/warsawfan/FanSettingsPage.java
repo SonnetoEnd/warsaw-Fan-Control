@@ -1,4 +1,4 @@
-package dev.k90fan.control;
+package io.github.sonnetoend.warsawfan;
 
 import android.content.Context;
 import android.content.DialogInterface;
@@ -25,7 +25,7 @@ import de.robv.android.xposed.XposedHelpers;
 import static de.robv.android.xposed.XposedHelpers.callMethod;
 
 final class FanSettingsPage {
-    private static final String PAGE = "dev.k90fan.control.page";
+    private static final String PAGE = FanModule.MODULE_PACKAGE + ".page";
     private static final Executor CHANGES = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Context context;
@@ -179,7 +179,7 @@ final class FanSettingsPage {
             switch (method.getName()) {
                 case "onPreferenceClick":
                     if (args[0] == page.appsRow) callMethod(fragment, "startActivity", new Intent()
-                            .setClassName("dev.k90fan.control", "dev.k90fan.control.AppRulesActivity"));
+                            .setClassName(FanModule.MODULE_PACKAGE, AppRulesActivity.class.getName()));
                     else if (!page.applying) page.chooseRpm();
                     return true;
                 case "hashCode": return System.identityHashCode(proxy);

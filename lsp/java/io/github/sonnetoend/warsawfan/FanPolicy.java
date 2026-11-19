@@ -1,4 +1,4 @@
-package dev.k90fan.control;
+package io.github.sonnetoend.warsawfan;
 
 import java.util.Collections;
 import java.util.Map;

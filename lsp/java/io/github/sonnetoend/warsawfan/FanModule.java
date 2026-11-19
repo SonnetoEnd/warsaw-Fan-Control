@@ -1,4 +1,4 @@
-package dev.k90fan.control;
+package io.github.sonnetoend.warsawfan;
 
 import android.app.Application;
 import android.content.Context;
@@ -14,6 +14,7 @@ import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public final class FanModule implements IXposedHookLoadPackage {
+    static final String MODULE_PACKAGE = "io.github.sonnetoend.warsawfan";
     static final String POWERKEEPER = "com.miui.powerkeeper";
     static final String SETTINGS = "com.android.settings";
     static final String SYSTEM_UI = "com.android.systemui";

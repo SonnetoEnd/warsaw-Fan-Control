@@ -1,4 +1,4 @@
-package dev.k90fan.control;
+package io.github.sonnetoend.warsawfan;
 
 import java.io.BufferedReader;
 import java.io.StringReader;

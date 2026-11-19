@@ -1,4 +1,4 @@
-package dev.k90fan.control;
+package io.github.sonnetoend.warsawfan;
 
 public final class FanPolicyTest {
     private static void check(boolean value, String message) {
